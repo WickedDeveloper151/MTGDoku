@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MTGDoku - Magic Card Guessing Game</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>MTGDoku</h1>
+            <p class="subtitle">Guess Magic: The Gathering Cards</p>
+        </header>
+
+        <main class="main-content">
+            <div class="game-section">
+                <div class="controls">
+                    <button id="newGameBtn" class="btn btn-primary">New Game</button>
+                    <button id="hintBtn" class="btn btn-secondary">Get Hint</button>
+                    <div class="stats">
+                        <span class="stat-item">Guesses: <span id="guessCount">0</span>/6</span>
+                        <span class="stat-item">Solved: <span id="solvedCount">0</span>/9</span>
+                    </div>
+                </div>
+
+                <div class="grid-container">
+                    <!-- Top labels -->
+                    <div class="grid-labels">
+                        <div class="label-spacer"></div>
+                        <div class="label" id="colLabel1"></div>
+                        <div class="label" id="colLabel2"></div>
+                        <div class="label" id="colLabel3"></div>
+                    </div>
+
+                    <!-- Game grid -->
+                    <div class="game-grid">
+                        <!-- Row 1 -->
+                        <div class="row-label" id="rowLabel1"></div>
+                        <button class="grid-cell" data-row="0" data-col="0"></button>
+                        <button class="grid-cell" data-row="0" data-col="1"></button>
+                        <button class="grid-cell" data-row="0" data-col="2"></button>
+
+                        <!-- Row 2 -->
+                        <div class="row-label" id="rowLabel2"></div>
+                        <button class="grid-cell" data-row="1" data-col="0"></button>
+                        <button class="grid-cell" data-row="1" data-col="1"></button>
+                        <button class="grid-cell" data-row="1" data-col="2"></button>
+
+                        <!-- Row 3 -->
+                        <div class="row-label" id="rowLabel3"></div>
+                        <button class="grid-cell" data-row="2" data-col="0"></button>
+                        <button class="grid-cell" data-row="2" data-col="1"></button>
+                        <button class="grid-cell" data-row="2" data-col="2"></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Info section -->
+            <div class="info-section">
+                <h2>How to Play</h2>
+                <ul>
+                    <li>Each row and column represents a Magic card attribute (type, color, mana cost, etc.)</li>
+                    <li>Find a card that matches BOTH the row and column criteria</li>
+                    <li>You have 6 guesses per cell</li>
+                    <li>Complete all 9 cells to win!</li>
+                </ul>
+            </div>
+        </main>
+
+        <!-- Modal for card search -->
+        <div class="modal hidden" id="searchModal">
+            <div class="modal-content search-modal">
+                <span class="close">&times;</span>
+                <h2>Search for a Card</h2>
+                <div class="search-container">
+                    <input 
+                        type="text" 
+                        id="cardSearchInput" 
+                        class="search-input" 
+                        placeholder="Type card name (fuzzy search)..."
+                        autocomplete="off"
+                    >
+                </div>
+                <div class="search-results" id="searchResults"></div>
+            </div>
+        </div>
+
+        <!-- Game Over Modal -->
+        <div class="modal hidden" id="gameOverModal">
+            <div class="modal-content">
+                <h2 id="gameOverTitle"></h2>
+                <p id="gameOverMessage"></p>
+                <button class="btn btn-primary" id="playAgainBtn">Play Again</button>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/game.js"></script>
+</body>
+</html>

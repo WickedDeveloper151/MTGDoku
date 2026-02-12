@@ -133,23 +133,9 @@ class MTGDokuGame {
 
     // Board generation: fetch and store a target card for each cell
     async generateNewGame() {
-        // Generate random target cards for each cell
-        for (let i = 0; i < 9; i++) {
-            const rowIndex = Math.floor(i / 3);
-            const colIndex = i % 3;
-
-            try {
-                const card = await this.getRandomCardForCriteria(
-                    this.rowCriteria[rowIndex],
-                    this.colCriteria[colIndex]
-                );
-
-                this.grid[i].targetCard = card;
-                this.updateLabels();
-            } catch (error) {
-                console.error('Error generating game:', error);
-            }
-        }
+        // No longer picking a random correct answer for each cell
+        // If needed, initialize grid or labels here
+        this.updateLabels();
     }
 
     // Data fetch: query Scryfall and return a random card matching criteria

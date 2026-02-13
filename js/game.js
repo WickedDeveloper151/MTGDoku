@@ -1,33 +1,38 @@
 // Utility: fuzzyMatch
-// Scores how well `needle` matches characters in `haystack` in order.
-// Returns a numeric score (higher = better) or -Infinity when not all
-// characters are found in sequence. Used to rank search results.
+// This function helps find cards even if you don't type the name perfectly.
+// It checks if the letters in 'needle' (what you typed) appear in 'haystack' (the card name).
+// It returns a score: higher is a better match.
 function fuzzyMatch(needle, haystack) {
-    const hLower = haystack.toLowerCase();
-    const nLower = needle.toLowerCase();
+    const haystackLower = haystack.toLowerCase();
+    const needleLower = needle.toLowerCase();
     let score = 0;
-    let nIdx = 0;
+    let needleIdx = 0;
 
-    for (let hIdx = 0; hIdx < hLower.length; hIdx++) {
-        if (nLower[nIdx] === hLower[hIdx]) {
+    // Loop through the card name to find matches
+    for (let haystackIdx = 0; haystackIdx < haystackLower.length; haystackIdx++) {
+        if (needleLower[needleIdx] === haystackLower[haystackIdx]) {
+            // Found a matching letter!
             score += 1;
-            nIdx++;
-        } else if (nIdx > 0) {
+            needleIdx++;
+        } else if (needleIdx > 0) {
+            // Penalty for gaps between matching letters
             score -= 0.5;
         }
 
-        if (nIdx === nLower.length) {
-            return score + (10 / (hIdx + 1));
+        // If we found all letters in the search term
+        if (needleIdx === needleLower.length) {
+            return score + (10 / (haystackIdx + 1));
         }
     }
 
-    return nIdx === nLower.length ? score : -Infinity;
+    return needleIdx === needleLower.length ? score : -Infinity;
 }
 
 // Main game controller class
-// encapsulates game state, setup, UI wiring, and gameplay logic.
+// This class handles the entire game: setting up the board, checking answers, and updating the screen.
 class MTGDokuGame {
     constructor() {
+        // Create a 9-cell grid (3x3). Each cell tracks its own state (solved, guesses, etc.)
         this.grid = Array(9).fill(null).map(() => ({
             targetCard: null,
             selectedCard: null,
@@ -35,7 +40,8 @@ class MTGDokuGame {
             solved: false
         }));
 
-        // All possible colors and types
+        // Define all the possible rules (criteria) for rows and columns.
+        // 1. Colors
         this.allColors = [
             { name: 'White Cards', code: 'c:w' },
             { name: 'Blue Cards', code: 'c:u' },
@@ -44,6 +50,7 @@ class MTGDokuGame {
             { name: 'Green Cards', code: 'c:g' }
         ];
 
+        // 2. Card Types
         this.allTypes = [
             { name: 'Creatures', code: 'type:creature' },
             { name: 'Instants', code: 'type:instant' },
@@ -52,7 +59,23 @@ class MTGDokuGame {
             { name: 'Artifacts', code: 'type:artifact' }
         ];
 
-        // Randomized for this game
+        // 3. Mana Value (Cost)
+        this.allCMCs = [
+            { name: 'Mana Value <= 2', code: 'mv<=2' },
+            { name: 'Mana Value 3', code: 'mv=3' },
+            { name: 'Mana Value 4', code: 'mv=4' },
+            { name: 'Mana Value >= 5', code: 'mv>=5' }
+        ];
+
+        // 4. Release Year
+        this.allYears = [
+            { name: 'Released Pre-2000', code: 'year<2000' },
+            { name: 'Released 2000-2009', code: 'year>=2000 year<=2009' },
+            { name: 'Released 2010-2019', code: 'year>=2010 year<=2019' },
+            { name: 'Released 2020+', code: 'year>=2020' }
+        ];
+
+        // These will hold the specific rules chosen for the current game
         this.rowCriteria = [];
         this.colCriteria = [];
 
@@ -62,11 +85,12 @@ class MTGDokuGame {
         this.currentCell = null;
         this.searchTimeout = null;
 
+        // Start the game setup
         this.init();
     }
 
     // Helper: shuffleArray
-    // Returns a shuffled copy of the provided array using Fisher-Yates.
+    // Mixes up a list of items randomly.
     shuffleArray(array) {
         const shuffled = [...array];
         for (let i = shuffled.length - 1; i > 0; i--) {
@@ -76,21 +100,105 @@ class MTGDokuGame {
         return shuffled;
     }
 
-    // Initialize the game: pick randomized criteria, wire events, create board
+    // Initialize the game: pick random rules for rows/cols and set up the screen
     async init() {
-        // Randomize rows and columns
-        const shuffledColors = this.shuffleArray(this.allColors);
-        const shuffledTypes = this.shuffleArray(this.allTypes);
+        // Combine all categories into one pool
+        const allCriteria = [
+            ...this.allColors,
+            ...this.allTypes,
+            ...this.allCMCs,
+            ...this.allYears
+        ];
 
-        // Take the first 3 of each
-        this.rowCriteria = shuffledColors.slice(0, 3);
-        this.colCriteria = shuffledTypes.slice(0, 3);
+        let attempts = 0;
+        let success = false;
+
+        // Try to create a valid board where rows and columns don't conflict.
+        // For example, we can't have "Mana Cost 3" intersecting with "Mana Cost 4".
+        while (!success && attempts < 10) {
+            attempts++;
+            const shuffled = this.shuffleArray(allCriteria);
+            
+            // Pick the first 3 items for our rows
+            const rows = shuffled.slice(0, 3);
+            const cols = [];
+
+            // Look through the rest of the items to find 3 columns that work with our rows
+            for (let i = 3; i < shuffled.length; i++) {
+                const candidate = shuffled[i];
+                let compatible = true;
+                
+                // Check if this potential column works with EVERY row we picked
+                for (const row of rows) {
+                    if (!this.areCriteriaCompatible(candidate, row)) {
+                        compatible = false;
+                        break;
+                    }
+                }
+
+                if (compatible) {
+                    cols.push(candidate);
+                }
+
+                // If we found 3 good columns, we are done!
+                if (cols.length === 3) break;
+            }
+
+            if (cols.length === 3) {
+                this.rowCriteria = rows;
+                this.colCriteria = cols;
+                success = true;
+            }
+        }
+
+        // If we couldn't find a perfect match after 10 tries, just pick random ones (fallback)
+        if (!success) {
+            console.warn("Could not generate conflict-free board, using random fallback.");
+            const shuffled = this.shuffleArray(allCriteria);
+            this.rowCriteria = shuffled.slice(0, 3);
+            this.colCriteria = shuffled.slice(3, 6);
+        }
 
         this.setupEventListeners();
         await this.generateNewGame();
     }
 
-    // Wire DOM event listeners for controls, grid cells and modals
+    // Helper: Checks if two rules can exist on the same card.
+    // Returns true if they are compatible, false if they are impossible together.
+    areCriteriaCompatible(critA, critB) {
+        // Figure out what category each rule belongs to (color, type, etc.)
+        const getCat = (c) => {
+            if (c.code.startsWith('c:')) return 'color';
+            if (c.code.startsWith('type:')) return 'type';
+            if (c.code.startsWith('mv')) return 'cmc';
+            if (c.code.startsWith('year')) return 'year';
+            return 'unknown';
+        };
+
+        const catA = getCat(critA);
+        const catB = getCat(critB);
+
+        // If categories are different (e.g. Color vs Type), they are usually compatible.
+        if (catA !== catB) return true;
+
+        // If categories are the same, we need to check specific logic:
+        if (catA === 'color') return true; // Multicolor cards exist
+        if (catA === 'cmc') return false; // CMC ranges are exclusive
+        if (catA === 'year') return false; // Year ranges are exclusive
+        
+        if (catA === 'type') {
+            // Instants and Sorceries can't be other types (usually)
+            const isExclusive = (code) => code.includes('instant') || code.includes('sorcery');
+            if (isExclusive(critA.code) || isExclusive(critB.code)) return false;
+            
+            // But Creatures, Artifacts, and Enchantments can overlap (e.g. Artifact Creature)
+            return true;
+        }
+
+        return true;
+    }
+
+    // Sets up clicks and interactions for buttons and the grid
     setupEventListeners() {
         // New game button
         document.getElementById('newGameBtn').addEventListener('click', () => {
@@ -99,10 +207,7 @@ class MTGDokuGame {
             }
         });
 
-        // Hint button
-        document.getElementById('hintBtn').addEventListener('click', () => this.giveHint());
-
-        // Grid cell buttons
+        // When a grid cell is clicked, open the search modal
         document.querySelectorAll('.grid-cell').forEach((btn, index) => {
             btn.addEventListener('click', () => this.openSearchModal(index));
         });
@@ -116,6 +221,7 @@ class MTGDokuGame {
             searchModal.classList.add('hidden');
         });
 
+        // Listen for typing in the search box
         searchInput.addEventListener('input', (e) => this.handleSearch(e));
 
         // Close modal when clicking outside
@@ -131,54 +237,12 @@ class MTGDokuGame {
         });
     }
 
-    // Board generation: fetch and store a target card for each cell
+    // Prepares the board for a new game
     async generateNewGame() {
-        // No longer picking a random correct answer for each cell
-        // If needed, initialize grid or labels here
         this.updateLabels();
     }
 
-    // Data fetch: query Scryfall and return a random card matching criteria
-    async getRandomCardForCriteria(rowCriteria, colCriteria) {
-        let query = this.buildScryfallQuery(rowCriteria, colCriteria);
-
-        try {
-            // Use a random page to get different cards each time
-            const randomPage = Math.floor(Math.random() * 5) + 1; // Pages 1-5
-            const response = await fetch(`https://api.scryfall.com/cards/search?q=${encodeURIComponent(query)}&unique=cards&page=${randomPage}`);
-
-            if (!response.ok) {
-                throw new Error('Scryfall API error');
-            }
-
-            const data = await response.json();
-
-            if (data.data && data.data.length > 0) {
-                // Get a truly random card from this page's results
-                const randomCard = data.data[Math.floor(Math.random() * data.data.length)];
-                return {
-                    name: randomCard.name,
-                    imageUrl: randomCard.image_uris?.normal || randomCard.image_uris?.small || null,
-                    type: randomCard.type_line,
-                    manaCost: randomCard.mana_cost || 'N/A',
-                    colors: randomCard.colors || [],
-                    id: randomCard.id
-                };
-            }
-
-            return null;
-        } catch (error) {
-            console.error('Error fetching card:', error);
-            return null;
-        }
-    }
-
-    // Query builder: create a Scryfall search string from row/column criteria
-    buildScryfallQuery(rowCriteria, colCriteria) {
-        return `${rowCriteria.code} ${colCriteria.code}`;
-    }
-
-    // UI: write the selected row and column labels into the DOM
+    // Updates the text on the screen to show the current rules (rows/cols)
     updateLabels() {
         // Update column labels
         for (let i = 0; i < 3; i++) {
@@ -191,11 +255,11 @@ class MTGDokuGame {
         }
     }
 
-    // UI: open the card search modal for a specific grid cell
+    // Opens the popup window to search for a card
     openSearchModal(cellIndex) {
         const cell = this.grid[cellIndex];
 
-        // Don't allow changing solved cells
+        // If the cell is already solved, don't let them change it
         if (cell.solved) {
             return;
         }
@@ -210,7 +274,8 @@ class MTGDokuGame {
         document.getElementById('searchResults').innerHTML = '';
     }
 
-    // Input handler: debounce the user's search input
+    // Handles typing in the search box.
+    // Uses a "debounce" to wait until you stop typing for 300ms before searching.
     async handleSearch(event) {
         const query = event.target.value.trim();
 
@@ -219,15 +284,14 @@ class MTGDokuGame {
             return;
         }
 
-        // Debounce the search
         clearTimeout(this.searchTimeout);
         this.searchTimeout = setTimeout(() => this.performSearch(query), 300);
     }
 
-    // Fetch & rank: perform the Scryfall search and sort results by fuzzy score
+    // Calls the Scryfall API to find cards matching the name
     async performSearch(query) {
         try {
-            // Fetch cards from Scryfall API
+            // Ask Scryfall for cards with this name
             const response = await fetch(`https://api.scryfall.com/cards/search?q="${query}" unique:cards&order=released`);
 
             if (!response.ok) {
@@ -242,7 +306,7 @@ class MTGDokuGame {
             const data = await response.json();
             const cards = data.data || [];
 
-            // Sort by fuzzy match score
+            // Sort the results so the best matches appear first
             const scored = cards.map(card => ({
                 card,
                 score: fuzzyMatch(query, card.name)
@@ -259,7 +323,7 @@ class MTGDokuGame {
         }
     }
 
-    // Render search results in the modal
+    // Shows the list of found cards in the popup
     displaySearchResults(cards) {
         const resultsContainer = document.getElementById('searchResults');
         resultsContainer.innerHTML = '';
@@ -295,6 +359,7 @@ class MTGDokuGame {
             resultItem.appendChild(img);
             resultItem.appendChild(info);
 
+            // When a card is clicked, select it
             resultItem.addEventListener('click', () => {
                 this.selectCard(card);
             });
@@ -303,7 +368,7 @@ class MTGDokuGame {
         });
     }
 
-    // Handle selection of a search result: store chosen card and submit guess
+    // Called when the user clicks a card from the search results
     selectCard(card) {
         const cellIndex = this.currentCell;
         const cell = this.grid[cellIndex];
@@ -312,12 +377,15 @@ class MTGDokuGame {
             return;
         }
 
+        // Save the card details to the cell
         cell.selectedCard = {
             name: card.name,
             imageUrl: card.image_uris?.normal || card.image_uris?.small || null,
             type: card.type_line,
             manaCost: card.mana_cost || 'N/A',
             colors: card.colors || [],
+            cmc: card.cmc,
+            released_at: card.released_at,
             id: card.id
         };
 
@@ -328,93 +396,141 @@ class MTGDokuGame {
         document.getElementById('searchModal').classList.add('hidden');
     }
 
-    // Validate a guess for a specific cell against that cell's criteria
-    // Marks the cell solved on success, otherwise applies error feedback
+    // Checks if the selected card is correct for the cell
     submitGuess(cellIndex) {
         const cell = this.grid[cellIndex];
-        const gridCellBtn = document.querySelectorAll('.grid-cell')[cellIndex];
-        // Validate the selected card against the cell's row (color) and column (type)
         const rowIndex = Math.floor(cellIndex / 3);
         const colIndex = cellIndex % 3;
         const rowCrit = this.rowCriteria[rowIndex];
         const colCrit = this.colCriteria[colIndex];
 
-        const cardColors = (cell.selectedCard.colors || []).map(c => c.toUpperCase());
-        const colorCode = (rowCrit && rowCrit.code) ? rowCrit.code.split(':')[1].toUpperCase() : null; // e.g. 'W'
-        const typeKeyword = (colCrit && colCrit.code) ? colCrit.code.split(':')[1].toLowerCase() : null; // e.g. 'creature'
+        // Check if the card matches both the row and column rules
+        const validation = this.validateCard(cell.selectedCard, rowCrit, colCrit);
 
-        const colorMatch = colorCode ? cardColors.includes(colorCode) : true;
-        const typeMatch = typeKeyword ? (cell.selectedCard.type.toLowerCase().includes(typeKeyword)) : true;
-
-        if (colorMatch && typeMatch) {
-            // Mark correct
-            if (!cell.solved) {
-                cell.solved = true;
-                this.totalSolved++;
-            }
-
-            gridCellBtn.classList.add('solved');
-            gridCellBtn.disabled = true;
-
-            const img = document.createElement('img');
-            img.src = cell.selectedCard.imageUrl;
-            img.alt = cell.selectedCard.name;
-            img.className = 'grid-cell-image';
-
-            const name = document.createElement('div');
-            name.className = 'grid-cell-name';
-            name.textContent = cell.selectedCard.name;
-
-            const status = document.createElement('div');
-            status.className = 'grid-cell-status';
-            status.textContent = '✓';
-
-            gridCellBtn.innerHTML = '';
-            gridCellBtn.appendChild(img);
-            gridCellBtn.appendChild(name);
-            gridCellBtn.appendChild(status);
-
-            if (this.totalSolved === 9) this.winGame();
+        if (validation.isValid) {
+            this.handleCorrectGuess(cellIndex, cell);
         } else {
-            // Incorrect guess
-            if (cell.guessCount >= this.guessLimit) {
-                gridCellBtn.classList.add('error');
-                gridCellBtn.disabled = true;
-
-                const status = document.createElement('div');
-                status.className = 'grid-cell-status';
-                status.textContent = '✗';
-
-                gridCellBtn.appendChild(status);
-
-                this.gameOver = true;
-                this.loseGame();
-            } else {
-                gridCellBtn.classList.add('error');
-
-                // Visual feedback on which criteria failed
-                const rowEl = document.getElementById(`rowLabel${rowIndex + 1}`);
-                const colEl = document.getElementById(`colLabel${colIndex + 1}`);
-
-                if (!colorMatch && rowEl) {
-                    rowEl.classList.add('flash');
-                    setTimeout(() => rowEl.classList.remove('flash'), 700);
-                }
-
-                if (!typeMatch && colEl) {
-                    colEl.classList.add('shake');
-                    setTimeout(() => colEl.classList.remove('shake'), 600);
-                }
-
-                // Remove small error state from the button after animation
-                setTimeout(() => gridCellBtn.classList.remove('error'), 700);
-            }
+            this.handleIncorrectGuess(cellIndex, cell, rowIndex, colIndex, validation);
         }
 
         this.updateStats();
     }
 
-    // Update UI counters for total guesses and solved cells
+    // Helper: Checks if a card matches the specific row and column rules
+    validateCard(card, rowCrit, colCrit) {
+        const rowMatch = this.checkSingleCriteria(card, rowCrit);
+        const colMatch = this.checkSingleCriteria(card, colCrit);
+
+        return { isValid: rowMatch && colMatch, rowMatch, colMatch };
+    }
+
+    // Checks one specific rule (e.g. "Is it Blue?" or "Is CMC > 5?")
+    checkSingleCriteria(card, criteria) {
+        if (!criteria || !criteria.code) return true;
+        const code = criteria.code;
+
+        // Check Color
+        if (code.startsWith('c:')) {
+            const color = code.split(':')[1].toUpperCase();
+            const cardColors = (card.colors || []).map(c => c.toUpperCase());
+            return cardColors.includes(color);
+        }
+
+        // Check Type
+        if (code.startsWith('type:')) {
+            const type = code.split(':')[1].toLowerCase();
+            return card.type.toLowerCase().includes(type);
+        }
+
+        // Check Mana Value (CMC)
+        if (code.startsWith('mv')) {
+            const val = parseInt(code.match(/\d+/)[0]);
+            const cardMVC = card.cmc !== undefined ? card.cmc : 0;
+            if (code.includes('<=')) return cardMVC <= val;
+            if (code.includes('>=')) return cardMVC >= val;
+            if (code.includes('<')) return cardMVC < val;
+            if (code.includes('>')) return cardMVC > val;
+            return cardMVC === val;
+        }
+
+        // Check Release Year
+        if (code.startsWith('year')) {
+            const cardYear = card.released_at ? parseInt(card.released_at.split('-')[0]) : 0;
+            const parts = code.split(' ');
+            return parts.every(part => {
+                const val = parseInt(part.match(/\d+/)[0]);
+                if (part.includes('<=')) return cardYear <= val;
+                if (part.includes('>=')) return cardYear >= val;
+                if (part.includes('<')) return cardYear < val;
+                if (part.includes('>')) return cardYear > val;
+                return cardYear === val;
+            });
+        }
+
+        return true;
+    }
+
+    // What happens when the player guesses correctly
+    handleCorrectGuess(cellIndex, cell) {
+        if (!cell.solved) {
+            cell.solved = true;
+            this.totalSolved++;
+        }
+
+        const gridCellBtn = document.querySelectorAll('.grid-cell')[cellIndex];
+        gridCellBtn.classList.add('solved');
+        gridCellBtn.disabled = true;
+
+        // Use template literal for cleaner DOM generation
+        gridCellBtn.innerHTML = `
+            <img src="${cell.selectedCard.imageUrl}" alt="${cell.selectedCard.name}" class="grid-cell-image">
+            <div class="grid-cell-name">${cell.selectedCard.name}</div>
+            <div class="grid-cell-status">✓</div>
+        `;
+
+        if (this.totalSolved === 9) this.winGame();
+    }
+
+    // What happens when the player guesses incorrectly
+    handleIncorrectGuess(cellIndex, cell, rowIndex, colIndex, validation) {
+        const gridCellBtn = document.querySelectorAll('.grid-cell')[cellIndex];
+
+        // If they ran out of guesses
+        if (cell.guessCount >= this.guessLimit) {
+            gridCellBtn.classList.add('error');
+            gridCellBtn.disabled = true;
+            
+            const status = document.createElement('div');
+            status.className = 'grid-cell-status';
+            status.textContent = '✗';
+            gridCellBtn.appendChild(status);
+
+            this.gameOver = true;
+            this.loseGame();
+        } else {
+            // Just a wrong guess, show animation
+            gridCellBtn.classList.add('error');
+
+            // Visual feedback on which criteria failed
+            const rowEl = document.getElementById(`rowLabel${rowIndex + 1}`);
+            const colEl = document.getElementById(`colLabel${colIndex + 1}`);
+
+            if (!validation.rowMatch && rowEl) {
+                rowEl.classList.add('flash');
+                setTimeout(() => rowEl.classList.remove('flash'), 700);
+            }
+
+            if (!validation.colMatch && colEl) {
+                colEl.classList.add('shake');
+                setTimeout(() => colEl.classList.remove('shake'), 600);
+            }
+
+            // Remove small error state from the button after animation
+            setTimeout(() => gridCellBtn.classList.remove('error'), 700);
+        }
+    }
+
+    // Updates the "Guesses: X/6" and "Solved: Y/9" counters
     updateStats() {
         let totalGuesses = 0;
         for (let cell of this.grid) {
@@ -427,7 +543,7 @@ class MTGDokuGame {
         document.getElementById('solvedCount').textContent = this.totalSolved;
     }
 
-    // Endgame: show win modal with summary
+    // Show the "You Won" popup
     winGame() {
         setTimeout(() => {
             const modal = document.getElementById('gameOverModal');
@@ -439,7 +555,7 @@ class MTGDokuGame {
         }, 500);
     }
 
-    // Endgame: show lose modal and reveal remaining targets
+    // Show the "Game Over" popup
     loseGame() {
         setTimeout(() => {
             const modal = document.getElementById('gameOverModal');
@@ -451,38 +567,14 @@ class MTGDokuGame {
         }, 500);
     }
 
-    // Helper: total guesses across all cells
+    // Calculates total guesses made so far
     getTotalGuesses() {
         return this.grid.reduce((total, cell) => total + cell.guessCount, 0);
     }
 
-    // Helper: list of unsolved target card names for game-over message
+    // Gets a list of cards that were supposed to be found (for the game over screen)
     getGameOverCards() {
         return this.grid.filter(c => !c.solved && c.targetCard).map(c => c.targetCard.name).join(', ');
-    }
-
-    // Hint: pick a random unsolved cell and reveal a short prefix of its name
-    giveHint() {
-        // Get all unsolved cells with target cards
-        const unsolvedCells = [];
-        for (let i = 0; i < this.grid.length; i++) {
-            if (!this.grid[i].solved && this.grid[i].targetCard) {
-                unsolvedCells.push(i);
-            }
-        }
-
-        if (unsolvedCells.length === 0) {
-            alert('All cells are solved!');
-            return;
-        }
-
-        // Pick a random unsolved cell
-        const randomIndex = Math.floor(Math.random() * unsolvedCells.length);
-        const cellIndex = unsolvedCells[randomIndex];
-        const cell = this.grid[cellIndex];
-
-        const hint = cell.targetCard.name.substring(0, 3);
-        alert(`Hint for cell ${cellIndex + 1}: Card starts with "${hint}"`);
     }
 }
 

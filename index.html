@@ -1,4 +1,10 @@
 <!DOCTYPE html>
+<!--
+  MTGDoku — Main game page.
+  Loads the 3×3 grid; row/column labels and puzzle date are filled by js/game.js
+  from the /api/board response. Each cell opens a search modal; correct card = matches
+  both that row's and column's criteria.
+-->
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -11,6 +17,11 @@
         <header class="header">
             <h1>MTGDoku</h1>
             <p class="subtitle">Guess Magic: The Gathering Cards</p>
+            <nav class="header-nav" aria-label="Puzzle navigation">
+                <a href="./" class="header-nav-link header-nav-link--active">Today</a>
+                <a href="./daily.html" class="header-nav-link">Past puzzles</a>
+            </nav>
+            <p class="puzzle-date" id="puzzleDate" aria-hidden="true"></p>
         </header>
 
         <main class="main-content">
@@ -23,8 +34,8 @@
                     </div>
                 </div>
 
+                <!-- Grid: 3 column labels on top, then 3 rows each with 1 row label + 3 cells -->
                 <div class="grid-container">
-                    <!-- Top labels -->
                     <div class="grid-labels">
                         <div class="label-spacer"></div>
                         <div class="label" id="colLabel1"></div>
@@ -32,21 +43,17 @@
                         <div class="label" id="colLabel3"></div>
                     </div>
 
-                    <!-- Game grid -->
                     <div class="game-grid">
-                        <!-- Row 1 -->
                         <div class="row-label" id="rowLabel1"></div>
                         <button class="grid-cell" data-row="0" data-col="0"></button>
                         <button class="grid-cell" data-row="0" data-col="1"></button>
                         <button class="grid-cell" data-row="0" data-col="2"></button>
 
-                        <!-- Row 2 -->
                         <div class="row-label" id="rowLabel2"></div>
                         <button class="grid-cell" data-row="1" data-col="0"></button>
                         <button class="grid-cell" data-row="1" data-col="1"></button>
                         <button class="grid-cell" data-row="1" data-col="2"></button>
 
-                        <!-- Row 3 -->
                         <div class="row-label" id="rowLabel3"></div>
                         <button class="grid-cell" data-row="2" data-col="0"></button>
                         <button class="grid-cell" data-row="2" data-col="1"></button>
@@ -55,7 +62,6 @@
                 </div>
             </div>
 
-            <!-- Info section -->
             <div class="info-section">
                 <h2>How to Play</h2>
                 <ul>
@@ -67,16 +73,16 @@
             </div>
         </main>
 
-        <!-- Modal for card search -->
+        <!-- Popup: type card name, results from Scryfall; click a card to submit as guess -->
         <div class="modal hidden" id="searchModal">
             <div class="modal-content search-modal">
                 <span class="close">&times;</span>
                 <h2>Search for a Card</h2>
                 <div class="search-container">
-                    <input 
-                        type="text" 
-                        id="cardSearchInput" 
-                        class="search-input" 
+                    <input
+                        type="text"
+                        id="cardSearchInput"
+                        class="search-input"
                         placeholder="Type card name (fuzzy search)..."
                         autocomplete="off"
                     >
@@ -85,7 +91,7 @@
             </div>
         </div>
 
-        <!-- Game Over Modal -->
+        <!-- Shown on win or game over -->
         <div class="modal hidden" id="gameOverModal">
             <div class="modal-content">
                 <h2 id="gameOverTitle"></h2>

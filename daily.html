@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<!--
+  Past puzzles list: shows the last 4 days (today, yesterday, 2 days ago, 3 days ago).
+  Each row has a "Play" link to the main game with ?date=YYYY-MM-DD so that day's
+  puzzle loads. Dates are in the user's local timezone.
+-->
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Past puzzles — MTGDoku</title>
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1>MTGDoku</h1>
+            <p class="subtitle">Past daily puzzles</p>
+            <nav class="header-nav" aria-label="Puzzle navigation">
+                <a href="./" class="header-nav-link">Today's puzzle</a>
+                <a href="./daily.html" class="header-nav-link header-nav-link--active">Past puzzles</a>
+            </nav>
+        </header>
+
+        <main class="main-content">
+            <p class="puzzle-list-intro">Play a puzzle from the last 4 days. Each link opens that day's puzzle.</p>
+            <ul class="puzzle-day-list" id="puzzleDayList"></ul>
+        </main>
+    </div>
+
+    <script>
+        // Build the list of 4 days: today, yesterday, 2 days ago, 3 days ago.
+        (function () {
+            const listEl = document.getElementById('puzzleDayList');
+            const today = new Date();
+            today.setHours(0, 0, 0, 0);  // Start of today (local)
+
+            const labels = ['Today', 'Yesterday', '2 days ago', '3 days ago'];
+            for (let i = 0; i < 4; i++) {
+                const d = new Date(today);
+                d.setDate(d.getDate() - i);
+                const y = d.getFullYear();
+                const m = String(d.getMonth() + 1).padStart(2, '0');
+                const day = String(d.getDate()).padStart(2, '0');
+                const dateStr = y + '-' + m + '-' + day;  // YYYY-MM-DD for API
+                const formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+
+                const li = document.createElement('li');
+                li.className = 'puzzle-day-item';
+                li.innerHTML = '<span class="puzzle-day-label">' + labels[i] + '</span> ' +
+                    '<span class="puzzle-day-date">' + formatted + '</span> ' +
+                    '<a href="./?date=' + encodeURIComponent(dateStr) + '" class="btn btn-primary puzzle-day-play">Play</a>';
+                listEl.appendChild(li);
+            }
+        })();
+    </script>
+</body>
+</html>

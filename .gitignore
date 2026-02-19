@@ -1,0 +1,5 @@
+node_modules/
+mtgdoku.db
+*.db
+.env
+.DS_Store

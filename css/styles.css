@@ -1,3 +1,20 @@
+/*
+ * MTGDoku — Styles for the game UI.
+ *
+ * Sections:
+ * - Global: CSS variables (colors, spacing), reset, body
+ * - Container & Layout: main card, header, main content area
+ * - Controls & Stats: New Game button, guess/solved counters
+ * - Grid: row/column labels, 3×3 cells, solved/error states, animations
+ * - Input & card preview (legacy), Suggestions (legacy)
+ * - Info section: "How to Play"
+ * - Modals: overlay, search modal, game over modal
+ * - Search results: list of cards in the search popup
+ * - Nav link & Past puzzles list: header link, /daily page
+ * - Responsive: breakpoints for smaller screens
+ * - MTG theme: color accents (white/blue/black/red/green)
+ */
+
 /* =====================
    Global Styles & Variables
    ===================== */
@@ -77,6 +94,13 @@ body {
     font-size: 1.2em;
     opacity: 0.95;
     font-weight: 300;
+}
+
+.header .puzzle-date {
+    font-size: 0.95em;
+    opacity: 0.85;
+    margin-top: 12px;
+    color: var(--text-light);
 }
 
 .main-content {
@@ -403,6 +427,92 @@ body {
 }
 
 /* =====================
+   Header nav (Today / Past puzzles)
+   ===================== */
+
+.header-nav {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+}
+
+.header-nav-link {
+    display: inline-block;
+    padding: 10px 20px;
+    font-size: 0.95em;
+    font-weight: 600;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    border-radius: 24px;
+    transition: var(--transition);
+    letter-spacing: 0.5px;
+}
+
+.header-nav-link:hover {
+    background: rgba(255, 255, 255, 0.2);
+    border-color: rgba(255, 255, 255, 0.4);
+    color: #fff;
+    transform: translateY(-1px);
+}
+
+.header-nav-link--active {
+    background: rgba(255, 255, 255, 0.25);
+    border-color: rgba(255, 255, 255, 0.45);
+    color: #fff;
+    cursor: default;
+    pointer-events: none;
+}
+
+/* =====================
+   Past puzzles list (daily.html)
+   ===================== */
+
+.puzzle-list-intro {
+    color: var(--text-light);
+    margin-bottom: 24px;
+}
+
+.puzzle-day-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.puzzle-day-item {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 12px 20px;
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+}
+
+.puzzle-day-label {
+    font-weight: 700;
+    color: var(--primary-color);
+    min-width: 100px;
+}
+
+.puzzle-day-date {
+    color: var(--text-dark);
+    flex: 1;
+}
+
+.puzzle-day-play {
+    text-decoration: none;
+    padding: 8px 16px;
+    font-size: 0.9em;
+}
+
+/* =====================
    Info Section
    ===================== */
 
@@ -690,6 +800,16 @@ body {
 
     .header .subtitle {
         font-size: 1em;
+    }
+
+    .header-nav {
+        margin-top: 12px;
+        gap: 6px;
+    }
+
+    .header-nav-link {
+        padding: 8px 14px;
+        font-size: 0.9em;
     }
 
     .main-content {

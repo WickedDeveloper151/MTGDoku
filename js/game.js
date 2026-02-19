@@ -1,38 +1,53 @@
-// Utility: fuzzyMatch
-// This function helps find cards even if you don't type the name perfectly.
-// It checks if the letters in 'needle' (what you typed) appear in 'haystack' (the card name).
-// It returns a score: higher is a better match.
+/**
+ * MTGDoku Frontend — Magic: The Gathering 3x3 guessing game.
+ *
+ * Flow: fetch board (row/column criteria) from GET /api/board, then for each
+ * cell the player searches Scryfall and picks a card. A guess is correct if the
+ * card matches both the row and column criteria for that cell ("any valid card").
+ */
+
+// =====================
+// Search helpers
+// =====================
+
+/**
+ * Fuzzy match: checks if the letters in `needle` (search input) appear in order
+ * in `haystack` (card name). Returns a score (higher = better match), or
+ * -Infinity if not a match. Used to rank Scryfall results.
+ */
 function fuzzyMatch(needle, haystack) {
     const haystackLower = haystack.toLowerCase();
     const needleLower = needle.toLowerCase();
     let score = 0;
     let needleIdx = 0;
 
-    // Loop through the card name to find matches
     for (let haystackIdx = 0; haystackIdx < haystackLower.length; haystackIdx++) {
         if (needleLower[needleIdx] === haystackLower[haystackIdx]) {
-            // Found a matching letter!
             score += 1;
             needleIdx++;
         } else if (needleIdx > 0) {
-            // Penalty for gaps between matching letters
-            score -= 0.5;
+            score -= 0.5; // Penalty for gaps between matching letters
         }
 
-        // If we found all letters in the search term
         if (needleIdx === needleLower.length) {
-            return score + (10 / (haystackIdx + 1));
+            return score + (10 / (haystackIdx + 1)); // Prefer matches that finish earlier
         }
     }
 
     return needleIdx === needleLower.length ? score : -Infinity;
 }
 
-// Main game controller class
-// This class handles the entire game: setting up the board, checking answers, and updating the screen.
+// =====================
+// Game controller
+// =====================
+
+/**
+ * Main game state and UI. Fetches board from backend, handles cell clicks,
+ * card search (Scryfall), validation (row + column criteria), and win/lose.
+ */
 class MTGDokuGame {
     constructor() {
-        // Create a 9-cell grid (3x3). Each cell tracks its own state (solved, guesses, etc.)
+        // Grid: 9 cells (3 rows × 3 cols). Each has selectedCard, guessCount, solved.
         this.grid = Array(9).fill(null).map(() => ({
             targetCard: null,
             selectedCard: null,
@@ -40,165 +55,59 @@ class MTGDokuGame {
             solved: false
         }));
 
-        // Define all the possible rules (criteria) for rows and columns.
-        // 1. Colors
-        this.allColors = [
-            { name: 'White Cards', code: 'c:w' },
-            { name: 'Blue Cards', code: 'c:u' },
-            { name: 'Black Cards', code: 'c:b' },
-            { name: 'Red Cards', code: 'c:r' },
-            { name: 'Green Cards', code: 'c:g' }
-        ];
-
-        // 2. Card Types
-        this.allTypes = [
-            { name: 'Creatures', code: 'type:creature' },
-            { name: 'Instants', code: 'type:instant' },
-            { name: 'Sorceries', code: 'type:sorcery' },
-            { name: 'Enchantments', code: 'type:enchantment' },
-            { name: 'Artifacts', code: 'type:artifact' }
-        ];
-
-        // 3. Mana Value (Cost)
-        this.allCMCs = [
-            { name: 'Mana Value <= 2', code: 'mv<=2' },
-            { name: 'Mana Value 3', code: 'mv=3' },
-            { name: 'Mana Value 4', code: 'mv=4' },
-            { name: 'Mana Value >= 5', code: 'mv>=5' }
-        ];
-
-        // 4. Release Year
-        this.allYears = [
-            { name: 'Released Pre-2000', code: 'year<2000' },
-            { name: 'Released 2000-2009', code: 'year>=2000 year<=2009' },
-            { name: 'Released 2010-2019', code: 'year>=2010 year<=2019' },
-            { name: 'Released 2020+', code: 'year>=2020' }
-        ];
-
-        // These will hold the specific rules chosen for the current game
+        // Filled by init() from GET /api/board (daily puzzle)
         this.rowCriteria = [];
         this.colCriteria = [];
+        this.puzzleDate = null; // YYYY-MM-DD from API, for display
 
-        this.guessLimit = 6;
+        this.guessLimit = 6;   // Max guesses per cell before game over
         this.totalSolved = 0;
         this.gameOver = false;
-        this.currentCell = null;
-        this.searchTimeout = null;
+        this.currentCell = null;  // Index of cell whose search modal is open
+        this.searchTimeout = null; // For debouncing search input
 
-        // Start the game setup
         this.init();
     }
 
-    // Helper: shuffleArray
-    // Mixes up a list of items randomly.
-    shuffleArray(array) {
-        const shuffled = [...array];
-        for (let i = shuffled.length - 1; i > 0; i--) {
-            const j = Math.floor(Math.random() * (i + 1));
-            [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-        }
-        return shuffled;
-    }
-
-    // Initialize the game: pick random rules for rows/cols and set up the screen
+    /**
+     * Load board from backend, then bind events and render labels.
+     * If fetch fails (e.g. no server), show a short error message.
+     *
+     * On GitHub Pages, the static frontend is hosted at user.github.io/<repo>,
+     * but the Node/SQLite backend must be hosted elsewhere (e.g. Render/Railway).
+     * BACKEND_BASE switches between local origin (dev) and a configurable
+     * production URL when running under *.github.io.
+     */
     async init() {
-        // Combine all categories into one pool
-        const allCriteria = [
-            ...this.allColors,
-            ...this.allTypes,
-            ...this.allCMCs,
-            ...this.allYears
-        ];
-
-        let attempts = 0;
-        let success = false;
-
-        // Try to create a valid board where rows and columns don't conflict.
-        // For example, we can't have "Mana Cost 3" intersecting with "Mana Cost 4".
-        while (!success && attempts < 10) {
-            attempts++;
-            const shuffled = this.shuffleArray(allCriteria);
-            
-            // Pick the first 3 items for our rows
-            const rows = shuffled.slice(0, 3);
-            const cols = [];
-
-            // Look through the rest of the items to find 3 columns that work with our rows
-            for (let i = 3; i < shuffled.length; i++) {
-                const candidate = shuffled[i];
-                let compatible = true;
-                
-                // Check if this potential column works with EVERY row we picked
-                for (const row of rows) {
-                    if (!this.areCriteriaCompatible(candidate, row)) {
-                        compatible = false;
-                        break;
-                    }
-                }
-
-                if (compatible) {
-                    cols.push(candidate);
-                }
-
-                // If we found 3 good columns, we are done!
-                if (cols.length === 3) break;
+        try {
+            const isGitHubPages = window.location.hostname.endsWith('github.io');
+            const BACKEND_BASE = isGitHubPages
+                ? 'https://YOUR-BACKEND-HOST-HERE'   // TODO: replace with your deployed backend URL
+                : window.location.origin;
+            const params = new URLSearchParams(window.location.search);
+            let dateParam = params.get('date');
+            if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
+                const t = new Date();
+                const y = t.getFullYear(), m = String(t.getMonth() + 1).padStart(2, '0'), d = String(t.getDate()).padStart(2, '0');
+                dateParam = y + '-' + m + '-' + d;
             }
-
-            if (cols.length === 3) {
-                this.rowCriteria = rows;
-                this.colCriteria = cols;
-                success = true;
-            }
-        }
-
-        // If we couldn't find a perfect match after 10 tries, just pick random ones (fallback)
-        if (!success) {
-            console.warn("Could not generate conflict-free board, using random fallback.");
-            const shuffled = this.shuffleArray(allCriteria);
-            this.rowCriteria = shuffled.slice(0, 3);
-            this.colCriteria = shuffled.slice(3, 6);
+            const response = await fetch(`${BACKEND_BASE}/api/board?date=${encodeURIComponent(dateParam)}`);
+            if (!response.ok) throw new Error('Failed to load board');
+            const data = await response.json();
+            this.rowCriteria = data.rowCriteria;
+            this.colCriteria = data.colCriteria;
+            this.puzzleDate = data.date || null;
+        } catch (err) {
+            console.error('Board fetch error:', err);
+            document.body.innerHTML = '<div class="container" style="padding: 40px; text-align: center;"><h1>MTGDoku</h1><p>Could not load game. Is the server running? Run <code>npm start</code> and open <a href="/">http://localhost:3000</a>.</p></div>';
+            return;
         }
 
         this.setupEventListeners();
         await this.generateNewGame();
     }
 
-    // Helper: Checks if two rules can exist on the same card.
-    // Returns true if they are compatible, false if they are impossible together.
-    areCriteriaCompatible(critA, critB) {
-        // Figure out what category each rule belongs to (color, type, etc.)
-        const getCat = (c) => {
-            if (c.code.startsWith('c:')) return 'color';
-            if (c.code.startsWith('type:')) return 'type';
-            if (c.code.startsWith('mv')) return 'cmc';
-            if (c.code.startsWith('year')) return 'year';
-            return 'unknown';
-        };
-
-        const catA = getCat(critA);
-        const catB = getCat(critB);
-
-        // If categories are different (e.g. Color vs Type), they are usually compatible.
-        if (catA !== catB) return true;
-
-        // If categories are the same, we need to check specific logic:
-        if (catA === 'color') return true; // Multicolor cards exist
-        if (catA === 'cmc') return false; // CMC ranges are exclusive
-        if (catA === 'year') return false; // Year ranges are exclusive
-        
-        if (catA === 'type') {
-            // Instants and Sorceries can't be other types (usually)
-            const isExclusive = (code) => code.includes('instant') || code.includes('sorcery');
-            if (isExclusive(critA.code) || isExclusive(critB.code)) return false;
-            
-            // But Creatures, Artifacts, and Enchantments can overlap (e.g. Artifact Creature)
-            return true;
-        }
-
-        return true;
-    }
-
-    // Sets up clicks and interactions for buttons and the grid
+    /** Attach click handlers: New Game, each grid cell, search modal close/search input, Play Again. */
     setupEventListeners() {
         // New game button
         document.getElementById('newGameBtn').addEventListener('click', () => {
@@ -231,31 +140,42 @@ class MTGDokuGame {
             }
         });
 
-        // Play again button
+        // Play again (reloads page and fetches a new board)
         document.getElementById('playAgainBtn').addEventListener('click', () => {
             location.reload();
         });
     }
 
-    // Prepares the board for a new game
+    /** Apply current row/column criteria and puzzle date to the UI. */
     async generateNewGame() {
         this.updateLabels();
+        this.updatePuzzleDateDisplay();
     }
 
-    // Updates the text on the screen to show the current rules (rows/cols)
+    /** Show "Daily Puzzle · Month DD, YYYY" in the header (from this.puzzleDate). */
+    updatePuzzleDateDisplay() {
+        const el = document.getElementById('puzzleDate');
+        if (!el || !this.puzzleDate) {
+            if (el) el.textContent = '';
+            return;
+        }
+        const [y, m, d] = this.puzzleDate.split('-');
+        const date = new Date(parseInt(y, 10), parseInt(m, 10) - 1, parseInt(d, 10));
+        const formatted = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        el.textContent = `Daily Puzzle · ${formatted}`;
+    }
+
+    /** Write row and column criterion names into the grid label elements. */
     updateLabels() {
-        // Update column labels
         for (let i = 0; i < 3; i++) {
             document.getElementById(`colLabel${i + 1}`).textContent = this.colCriteria[i].name;
         }
-
-        // Update row labels
         for (let i = 0; i < 3; i++) {
             document.getElementById(`rowLabel${i + 1}`).textContent = this.rowCriteria[i].name;
         }
     }
 
-    // Opens the popup window to search for a card
+    /** Open the card-search modal for the given cell (if not already solved). */
     openSearchModal(cellIndex) {
         const cell = this.grid[cellIndex];
 
@@ -274,8 +194,10 @@ class MTGDokuGame {
         document.getElementById('searchResults').innerHTML = '';
     }
 
-    // Handles typing in the search box.
-    // Uses a "debounce" to wait until you stop typing for 300ms before searching.
+    /**
+     * Debounced search: wait 300ms after last keystroke before calling Scryfall,
+     * to avoid spamming the API while the user is still typing.
+     */
     async handleSearch(event) {
         const query = event.target.value.trim();
 
@@ -288,7 +210,7 @@ class MTGDokuGame {
         this.searchTimeout = setTimeout(() => this.performSearch(query), 300);
     }
 
-    // Calls the Scryfall API to find cards matching the name
+    /** Call Scryfall search API and show up to 10 results, sorted by fuzzy match score. */
     async performSearch(query) {
         try {
             // Ask Scryfall for cards with this name
@@ -323,7 +245,7 @@ class MTGDokuGame {
         }
     }
 
-    // Shows the list of found cards in the popup
+    /** Render the list of cards in the search modal; clicking one calls selectCard(card). */
     displaySearchResults(cards) {
         const resultsContainer = document.getElementById('searchResults');
         resultsContainer.innerHTML = '';
@@ -368,16 +290,17 @@ class MTGDokuGame {
         });
     }
 
-    // Called when the user clicks a card from the search results
+    /**
+     * User picked a card from search results. Store it on the cell, increment
+     * guess count, validate against row/column criteria, then close modal.
+     */
     selectCard(card) {
         const cellIndex = this.currentCell;
         const cell = this.grid[cellIndex];
 
-        if (cell.solved) {
-            return;
-        }
+        if (cell.solved) return;
 
-        // Save the card details to the cell
+        // Normalize to the shape checkSingleCriteria expects (colors, type, cmc, released_at)
         cell.selectedCard = {
             name: card.name,
             imageUrl: card.image_uris?.normal || card.image_uris?.small || null,
@@ -396,7 +319,11 @@ class MTGDokuGame {
         document.getElementById('searchModal').classList.add('hidden');
     }
 
-    // Checks if the selected card is correct for the cell
+    /**
+     * Validate the current cell's selectedCard against this cell's row and column
+     * criteria. If valid → mark cell solved and maybe win; if invalid → wrong-guess
+     * feedback or game over if guess limit reached.
+     */
     submitGuess(cellIndex) {
         const cell = this.grid[cellIndex];
         const rowIndex = Math.floor(cellIndex / 3);
@@ -404,7 +331,6 @@ class MTGDokuGame {
         const rowCrit = this.rowCriteria[rowIndex];
         const colCrit = this.colCriteria[colIndex];
 
-        // Check if the card matches both the row and column rules
         const validation = this.validateCard(cell.selectedCard, rowCrit, colCrit);
 
         if (validation.isValid) {
@@ -416,7 +342,7 @@ class MTGDokuGame {
         this.updateStats();
     }
 
-    // Helper: Checks if a card matches the specific row and column rules
+    /** Returns { isValid, rowMatch, colMatch } for the card vs row/column criteria. */
     validateCard(card, rowCrit, colCrit) {
         const rowMatch = this.checkSingleCriteria(card, rowCrit);
         const colMatch = this.checkSingleCriteria(card, colCrit);
@@ -424,25 +350,28 @@ class MTGDokuGame {
         return { isValid: rowMatch && colMatch, rowMatch, colMatch };
     }
 
-    // Checks one specific rule (e.g. "Is it Blue?" or "Is CMC > 5?")
+    /**
+     * Returns true if the card satisfies one criterion. Interprets criterion.code:
+     * c:X (color), type:X (type line), mv... (CMC), year... (released_at year).
+     */
     checkSingleCriteria(card, criteria) {
         if (!criteria || !criteria.code) return true;
         const code = criteria.code;
 
-        // Check Color
+        // Color: card must be at least this color (e.g. c:u = blue)
         if (code.startsWith('c:')) {
             const color = code.split(':')[1].toUpperCase();
             const cardColors = (card.colors || []).map(c => c.toUpperCase());
             return cardColors.includes(color);
         }
 
-        // Check Type
+        // Type: card's type_line must contain this (e.g. type:creature)
         if (code.startsWith('type:')) {
             const type = code.split(':')[1].toLowerCase();
             return card.type.toLowerCase().includes(type);
         }
 
-        // Check Mana Value (CMC)
+        // Mana value: compare card.cmc to the number in the code (<=, >=, =, etc.)
         if (code.startsWith('mv')) {
             const val = parseInt(code.match(/\d+/)[0]);
             const cardMVC = card.cmc !== undefined ? card.cmc : 0;
@@ -453,7 +382,7 @@ class MTGDokuGame {
             return cardMVC === val;
         }
 
-        // Check Release Year
+        // Release year: card.released_at is "YYYY-MM-DD"; code can be "year<2000" or "year>=2010 year<=2019"
         if (code.startsWith('year')) {
             const cardYear = card.released_at ? parseInt(card.released_at.split('-')[0]) : 0;
             const parts = code.split(' ');
@@ -470,7 +399,7 @@ class MTGDokuGame {
         return true;
     }
 
-    // What happens when the player guesses correctly
+    /** Mark cell as solved, show card image and name, disable cell. If 9/9 solved, win. */
     handleCorrectGuess(cellIndex, cell) {
         if (!cell.solved) {
             cell.solved = true;
@@ -481,7 +410,6 @@ class MTGDokuGame {
         gridCellBtn.classList.add('solved');
         gridCellBtn.disabled = true;
 
-        // Use template literal for cleaner DOM generation
         gridCellBtn.innerHTML = `
             <img src="${cell.selectedCard.imageUrl}" alt="${cell.selectedCard.name}" class="grid-cell-image">
             <div class="grid-cell-name">${cell.selectedCard.name}</div>
@@ -491,11 +419,14 @@ class MTGDokuGame {
         if (this.totalSolved === 9) this.winGame();
     }
 
-    // What happens when the player guesses incorrectly
+    /**
+     * Wrong guess: if guess limit reached for this cell → disable cell and trigger
+     * game over; otherwise show brief error state and flash/shake the row/column
+     * label that didn't match.
+     */
     handleIncorrectGuess(cellIndex, cell, rowIndex, colIndex, validation) {
         const gridCellBtn = document.querySelectorAll('.grid-cell')[cellIndex];
 
-        // If they ran out of guesses
         if (cell.guessCount >= this.guessLimit) {
             gridCellBtn.classList.add('error');
             gridCellBtn.disabled = true;
@@ -508,10 +439,8 @@ class MTGDokuGame {
             this.gameOver = true;
             this.loseGame();
         } else {
-            // Just a wrong guess, show animation
             gridCellBtn.classList.add('error');
 
-            // Visual feedback on which criteria failed
             const rowEl = document.getElementById(`rowLabel${rowIndex + 1}`);
             const colEl = document.getElementById(`colLabel${colIndex + 1}`);
 
@@ -525,12 +454,11 @@ class MTGDokuGame {
                 setTimeout(() => colEl.classList.remove('shake'), 600);
             }
 
-            // Remove small error state from the button after animation
             setTimeout(() => gridCellBtn.classList.remove('error'), 700);
         }
     }
 
-    // Updates the "Guesses: X/6" and "Solved: Y/9" counters
+    /** Refresh the stats display: total guesses and number of solved cells. */
     updateStats() {
         let totalGuesses = 0;
         for (let cell of this.grid) {
@@ -543,7 +471,7 @@ class MTGDokuGame {
         document.getElementById('solvedCount').textContent = this.totalSolved;
     }
 
-    // Show the "You Won" popup
+    /** Show win modal with total guesses. */
     winGame() {
         setTimeout(() => {
             const modal = document.getElementById('gameOverModal');
@@ -555,30 +483,24 @@ class MTGDokuGame {
         }, 500);
     }
 
-    // Show the "Game Over" popup
+    /** Show game over modal (any-valid-card message: no "correct" card list). */
     loseGame() {
         setTimeout(() => {
             const modal = document.getElementById('gameOverModal');
             document.getElementById('gameOverTitle').textContent = '😢 Game Over';
             document.getElementById('gameOverMessage').textContent =
-                `You ran out of guesses on a cell. The correct cards were: ${this.getGameOverCards()}`;
+                'You ran out of guesses on a cell. Any card that matched both the row and column criteria would have been correct—try again!';
 
             modal.classList.remove('hidden');
         }, 500);
     }
 
-    // Calculates total guesses made so far
+    /** Sum of guessCount across all cells (for win message). */
     getTotalGuesses() {
         return this.grid.reduce((total, cell) => total + cell.guessCount, 0);
     }
-
-    // Gets a list of cards that were supposed to be found (for the game over screen)
-    getGameOverCards() {
-        return this.grid.filter(c => !c.solved && c.targetCard).map(c => c.targetCard.name).join(', ');
-    }
 }
 
-// Initialize game when page loads
 document.addEventListener('DOMContentLoaded', () => {
     new MTGDokuGame();
 });

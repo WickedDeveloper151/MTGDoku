@@ -1,0 +1,21 @@
+# Render Blueprint — deploy the MTGDoku API (Node + SQLite) as a Web Service.
+# Use this when connecting the repo to Render: New → Blueprint → connect repo → Render will use this file.
+#
+# The frontend (index.html, daily.html, css, js) is meant to be hosted on GitHub Pages;
+# this service only needs to serve the API. For a backend-only deploy you could later
+# strip static file serving and only expose /api/board.
+
+services:
+  - type: web
+    name: mtgdoku-api
+    runtime: node
+    region: oregon
+
+    buildCommand: npm install
+    startCommand: npm start
+
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+    # Render sets PORT automatically; server.js uses process.env.PORT || 3000
